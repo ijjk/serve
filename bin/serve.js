@@ -8,6 +8,7 @@ const {promisify} = require('util');
 const {parse} = require('url');
 const dns = require('dns');
 const os = require('os');
+const compress = require('compression')();
 
 // Packages
 const Ajv = require('ajv');
@@ -153,7 +154,9 @@ const registerShutdown = (fn) => {
 };
 
 const startEndpoint = (endpoint, config, args) => {
-	const server = http.createServer((request, response) => handler(request, response, config));
+	const server = http.createServer((request, response) => {
+		compress(request, response, () => handler(request, response, config));
+	});
 	const {isTTY} = process.stdout;
 	const clipboard = args['--no-clipboard'] !== true;
 
