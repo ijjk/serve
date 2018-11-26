@@ -19,12 +19,14 @@ const {write: copy} = require('clipboardy');
 const handler = require('serve-handler');
 const schema = require('@zeit/schemas/deployment/config-static');
 const boxen = require('boxen');
+const compression = require('compression');
 
 // Utilities
 const pkg = require('../package');
 
 const readFile = promisify(fs.readFile);
 const lookup = promisify(dns.lookup);
+const compressionHandler = promisify(compression());
 
 const warning = (message) => chalk`{yellow WARNING:} ${message}`;
 const info = (message) => chalk`{magenta INFO:} ${message}`;
@@ -153,14 +155,25 @@ const registerShutdown = (fn) => {
 	process.on('exit', wrapper);
 };
 
-const startEndpoint = (endpoint, config, args) => {
-	const server = http.createServer((request, response) => {
-		compress(request, response, () => handler(request, response, config));
-	});
+const startEndpoint = (endpoint, config, args, previous) => {
 	const {isTTY} = process.stdout;
 	const clipboard = args['--no-clipboard'] !== true;
+	const compress = args['--no-compression'] !== true;
+
+	const server = http.createServer(async (request, response) => {
+		if (compress) {
+			await compressionHandler(request, response);
+		}
+
+		return handler(request, response, config);
+	});
 
 	server.on('error', (err) => {
+		if (err.code === 'EADDRINUSE' && endpoint.length === 1 && !isNaN(endpoint[0])) {
+			startEndpoint([0], config, args, endpoint[0]);
+			return;
+		}
+
 		console.error(error(`Failed to serve: ${err.stack}`));
 		process.exit(1);
 	});
@@ -198,6 +211,10 @@ const startEndpoint = (endpoint, config, args) => {
 
 			if (networkAddress) {
 				message += `\n${chalk.bold('- On Your Network:')}  ${networkAddress}`;
+			}
+
+			if (previous) {
+				message += chalk.red(`\n\nThis port was picked because ${chalk.underline(previous)} is in use.`);
 			}
 
 			if (clipboard) {
@@ -277,6 +294,10 @@ const loadConfig = async (cwd, entry, args) => {
 		Object.assign(config, content);
 		console.log(info(`Discovered configuration in \`${file}\``));
 
+		if (file === 'now.json' || file === 'package.json') {
+			console.error(warning('The config files `now.json` and `package.json` are deprecated. Please use `serve.json`.'));
+		}
+
 		break;
 	}
 
@@ -313,6 +334,7 @@ const loadConfig = async (cwd, entry, args) => {
 			'--debug': Boolean,
 			'--config': String,
 			'--no-clipboard': Boolean,
+			'--no-compression': Boolean,
 			'-h': '--help',
 			'-v': '--version',
 			'-l': '--listen',
@@ -320,6 +342,7 @@ const loadConfig = async (cwd, entry, args) => {
 			'-d': '--debug',
 			'-c': '--config',
 			'-n': '--no-clipboard',
+			'-u': '--no-compression',
 			// This is deprecated and only for backwards-compatibility.
 			'-p': '--listen'
 		});
@@ -328,7 +351,9 @@ const loadConfig = async (cwd, entry, args) => {
 		process.exit(1);
 	}
 
-	await updateCheck(args['--debug']);
+	if (process.env.NO_UPDATE_CHECK !== '1') {
+		await updateCheck(args['--debug']);
+	}
 
 	if (args['--version']) {
 		console.log(pkg.version);

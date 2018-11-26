@@ -1,6 +1,6 @@
 {
   "name": "serve",
-  "version": "10.0.2",
+  "version": "10.1.1",
   "description": "Static file serving and directory listing",
   "scripts": {
     "test": "yarn lint",
@@ -43,7 +43,7 @@
     "chalk": "2.4.1",
     "clipboardy": "1.2.3",
     "compression": "1.7.3",
-    "serve-handler": "5.0.3",
+    "serve-handler": "5.0.7",
     "update-check": "1.5.2"
   }
 }
